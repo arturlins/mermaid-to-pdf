@@ -9,6 +9,8 @@ const nextConfig: NextConfig = {
       './node_modules/puppeteer/**/*',
       './node_modules/chalk/**/*',
       './node_modules/import-meta-resolve/**/*',
+      './node_modules/cosmiconfig/**/*',
+      './node_modules/@puppeteer/**/*',
     ],
   },
 };
