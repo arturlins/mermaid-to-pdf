@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, ChangeEvent, useEffect } from 'react';
+import * as FileSaver from 'file-saver';
 import { Upload, FileText, Download, Code, ArrowRight, Loader2, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
@@ -137,7 +138,9 @@ export default function Home() {
       }
 
       const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
+      // Force content type to PDF to ensure browser recognition
+      const pdfBlob = new Blob([blob], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(pdfBlob);
       setDownloadUrl(url);
 
     } catch (err) {
@@ -146,6 +149,47 @@ export default function Home() {
       setIsConverting(false);
     }
   };
+
+  const handleDownload = async () => {
+    // Robust filename generation
+    let fileName = 'diagram.pdf';
+    if (file && file.name) {
+      fileName = file.name.replace(/\.(md|mmd)$/i, '') + '.pdf';
+    }
+
+    // Strategy 1: For Code input, use Native Form Submit (Most Robust)
+    if (!file && code) {
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = '/api/convert';
+      form.target = '_self'; // Handle download in same tab
+      form.style.display = 'none';
+
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'code';
+      input.value = code;
+      form.appendChild(input);
+
+      document.body.appendChild(form);
+      form.submit();
+      document.body.removeChild(form);
+      return;
+    }
+
+    // Strategy 2: For File input, use FileSaver (Client-side Blob)
+    // We can't re-submit a File object via standard form without user interaction.
+    if (!downloadUrl) return;
+
+    try {
+      const response = await fetch(downloadUrl);
+      const blob = await response.blob();
+      FileSaver.saveAs(blob, fileName);
+    } catch (e) {
+      console.error("Download failed", e);
+    }
+  };
+
 
   return (
     <main className="flex min-h-screen flex-col items-center p-4 md:p-8 gap-6 max-w-[1920px] mx-auto w-full">
@@ -335,13 +379,12 @@ export default function Home() {
                 animate={{ scale: 1, opacity: 1, x: 0 }}
                 className=""
               >
-                <a
-                  href={downloadUrl}
-                  download={file ? file.name.replace(/\.(md|mmd)$/, '.pdf') : 'mermaid-diagram.pdf'}
+                <button
+                  onClick={handleDownload}
                   className="bg-green-500 hover:bg-green-600 text-white px-10 py-4 rounded-xl font-bold text-lg transition-colors flex items-center justify-center gap-3 shadow-lg shadow-green-500/20 min-w-[200px]"
                 >
                   <Download size={24} /> Download PDF
-                </a>
+                </button>
               </motion.div>
             )}
           </AnimatePresence>

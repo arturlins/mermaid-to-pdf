@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFile, readFile, unlink, mkdir } from 'fs/promises';
+import { writeFile, readFile, unlink, mkdir, stat } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join, resolve } from 'path';
 import { exec } from 'child_process';
@@ -22,11 +22,13 @@ export async function POST(req: NextRequest) {
     const code = formData.get('code') as string | null;
 
     let inputContent = '';
-    let originalName = 'mermaid-diagram';
+    let originalName = 'diagram';
 
     if (file) {
       inputContent = await file.text();
-      originalName = file.name.replace(/\.(mmd|md)$/i, '');
+      // Sanitize filename: ASCII only, fallback to 'diagram' if empty
+      const cleanName = file.name.replace(/\.(mmd|md)$/i, '').replace(/[^a-zA-Z0-9._-]/g, '_');
+      originalName = cleanName || 'diagram';
 
       const mermaidBlockRegex = /```mermaid\s*([\s\S]*?)\s*```/;
       const match = mermaidBlockRegex.exec(inputContent);
@@ -36,6 +38,9 @@ export async function POST(req: NextRequest) {
     } else if (code) {
       inputContent = code;
     }
+
+    // Debug inputs
+    console.log(`Input received: File=${!!file}, CodeLength=${code?.length}`);
 
     if (!inputContent) {
       return NextResponse.json({ error: 'No Mermaid code provided' }, { status: 400 });
@@ -111,8 +116,8 @@ export async function POST(req: NextRequest) {
       // Pass HOME env var to point to tempDir to avoid permission issues with dotfiles
       const env = { ...process.env, HOME: tempDir, PUPPETEER_CONFIG: puppeteerConfigPath };
       const { stdout, stderr } = await execAsync(command, { env });
-      console.log('stdout:', stdout);
-      if (stderr) console.error('stderr:', stderr);
+      console.log('mmdc stdout:', stdout);
+      if (stderr) console.error('mmdc stderr:', stderr);
     } catch (execError: any) {
       console.error('Execution Error:', execError);
       // Check if it's a permission denied error
@@ -126,13 +131,22 @@ export async function POST(req: NextRequest) {
       throw new Error("PDF file was not created by the converter.");
     }
 
+    const fileStat = await stat(outputPath);
+    if (fileStat.size === 0) {
+      throw new Error("PDF file was created but is empty (0 bytes).");
+    }
+    console.log(`PDF generated successfully. Size: ${fileStat.size} bytes`);
+
     const pdfBuffer = await readFile(outputPath);
+    console.log(`PDF successfully read into buffer. Buffer size: ${pdfBuffer.length}`);
 
     return new NextResponse(pdfBuffer, {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="${originalName}.pdf"`,
+        'Content-Length': pdfBuffer.length.toString(),
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
       },
     });
 
