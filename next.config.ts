@@ -21,6 +21,13 @@ const nextConfig: NextConfig = {
       './node_modules/unbzip2-stream/**/*',
       './node_modules/yargs/**/*',
       './node_modules/semver/**/*',
+      './node_modules/yargs-parser/**/*',
+      './node_modules/cliui/**/*',
+      './node_modules/escalade/**/*',
+      './node_modules/get-caller-file/**/*',
+      './node_modules/require-directory/**/*',
+      './node_modules/string-width/**/*',
+      './node_modules/y18n/**/*',
     ],
   },
 };
