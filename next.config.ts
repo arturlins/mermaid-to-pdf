@@ -1,4 +1,4 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   serverExternalPackages: ['@sparticuz/chromium', '@mermaid-js/mermaid-cli'],
@@ -6,5 +6,4 @@ const nextConfig: NextConfig = {
     '/api/convert': ['./node_modules/@mermaid-js/mermaid-cli/**/*'],
   },
 };
-
 export default nextConfig;
