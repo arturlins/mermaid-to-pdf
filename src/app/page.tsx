@@ -145,7 +145,7 @@ export default function Home() {
           {/* Dropzone */}
           <div
             className={clsx(
-              "h-48 rounded-2xl border-2 border-dashed transition-all duration-300 flex flex-col items-center justify-center p-6 gap-4 text-center cursor-pointer relative overflow-hidden group shrink-0",
+              "h-full min-h-[400px] rounded-2xl border-2 border-dashed transition-all duration-300 flex flex-col items-center justify-center p-6 gap-4 text-center cursor-pointer relative overflow-hidden group shrink-0",
               dragActive ? "border-primary bg-primary/10" : "border-white/10 hover:border-white/20 hover:bg-white/5 bg-secondary/20"
             )}
             onDragEnter={handleDrag}
@@ -205,65 +205,66 @@ export default function Home() {
             </AnimatePresence>
           </div>
 
-          {/* Action / Result Panel */}
-          <div className="flex-1 bg-secondary/20 rounded-2xl p-8 border border-white/5 flex flex-col items-center justify-center text-center gap-6">
+        </div>
+      </div>
 
-            <div className="space-y-2">
-              <h3 className="text-xl font-bold text-white">
-                {file ? 'Ready to Convert File' : 'Ready to Convert Code'}
-              </h3>
-              <p className="text-muted-foreground text-sm max-w-xs mx-auto">
-                {file ? `Convert "${file.name}" to PDF.` : 'Convert the Mermaid code from the editor to PDF.'}
-              </p>
-            </div>
+      {/* Action / Result Panel - Moved to bottom */}
+      <div className="w-full bg-secondary/20 rounded-2xl p-8 border border-white/5 flex flex-col items-center justify-center text-center gap-6 mt-4 backdrop-blur-sm shadow-2xl">
 
-            <button
-              onClick={convert}
-              disabled={isConverting || (!code && !file)}
-              className="w-full max-w-xs bg-primary hover:bg-primary/90 text-white px-8 py-4 rounded-xl font-bold text-lg transition-all transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 shadow-xl shadow-primary/20"
-            >
-              {isConverting ? (
-                <>
-                  <Loader2 className="animate-spin" size={24} /> Converting...
-                </>
-              ) : (
-                <>
-                  Convert Now <ArrowRight size={24} />
-                </>
-              )}
-            </button>
+        <div className="space-y-2">
+          <h3 className="text-2xl font-bold text-white">
+            {file ? 'Ready to Convert File' : 'Ready to Convert Code'}
+          </h3>
+          <p className="text-muted-foreground text-sm max-w-md mx-auto">
+            {file ? `Convert "${file.name}" to PDF.` : 'Convert the Mermaid code from the editor above to a high-quality PDF.'}
+          </p>
+        </div>
 
-            {error && (
+        <div className="flex gap-4 items-center">
+          <button
+            onClick={convert}
+            disabled={isConverting || (!code && !file)}
+            className="bg-primary hover:bg-primary/90 text-white px-10 py-4 rounded-xl font-bold text-lg transition-all transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 shadow-xl shadow-primary/20 min-w-[200px]"
+          >
+            {isConverting ? (
+              <>
+                <Loader2 className="animate-spin" size={24} /> Converting...
+              </>
+            ) : (
+              <>
+                Convert Now <ArrowRight size={24} />
+              </>
+            )}
+          </button>
+
+          <AnimatePresence>
+            {downloadUrl && !isConverting && (
               <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200 text-sm flex items-center gap-2 max-w-sm"
+                initial={{ scale: 0.9, opacity: 0, x: -20 }}
+                animate={{ scale: 1, opacity: 1, x: 0 }}
+                className=""
               >
-                <AlertCircle size={16} className="shrink-0" /> {error}
+                <a
+                  href={downloadUrl}
+                  download={file ? file.name.replace(/\.(md|mmd)$/, '.pdf') : 'mermaid-diagram.pdf'}
+                  className="bg-green-500 hover:bg-green-600 text-white px-10 py-4 rounded-xl font-bold text-lg transition-colors flex items-center justify-center gap-3 shadow-lg shadow-green-500/20 min-w-[200px]"
+                >
+                  <Download size={24} /> Download PDF
+                </a>
               </motion.div>
             )}
-
-            <AnimatePresence>
-              {downloadUrl && !isConverting && (
-                <motion.div
-                  initial={{ scale: 0.9, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  className="w-full max-w-xs"
-                >
-                  <a
-                    href={downloadUrl}
-                    download={file ? file.name.replace(/\.(md|mmd)$/, '.pdf') : 'mermaid-diagram.pdf'}
-                    className="w-full bg-green-500 hover:bg-green-600 text-white px-8 py-4 rounded-xl font-bold text-lg transition-colors flex items-center justify-center gap-3 shadow-lg shadow-green-500/20"
-                  >
-                    <Download size={24} /> Download PDF
-                  </a>
-                  <p className="mt-4 text-xs text-muted-foreground">Conversion successful!</p>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-          </div>
+          </AnimatePresence>
         </div>
+
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200 text-sm flex items-center gap-2"
+          >
+            <AlertCircle size={16} className="shrink-0" /> {error}
+          </motion.div>
+        )}
 
       </div>
     </main>
