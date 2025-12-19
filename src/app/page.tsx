@@ -1,16 +1,22 @@
 'use client';
 
 import { useState, useRef, ChangeEvent, useEffect } from 'react';
-import { encodeURL } from 'js-base64';
 import { Upload, FileText, Download, Code, ArrowRight, Loader2, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import mermaid from 'mermaid';
 
+// Global Mermaid config: Force pure SVG text rendering for all diagram types
+// This avoids foreignObject HTML elements which svg2pdf.js cannot process
 mermaid.initialize({
   startOnLoad: false,
   theme: 'default',
   securityLevel: 'loose',
+  flowchart: { htmlLabels: false },
+  sequence: { useMaxWidth: false },
+  class: { htmlLabels: false },
+  journey: { useMaxWidth: false },
+  pie: { textPosition: 0.5 },
 });
 
 export default function Home() {
@@ -40,6 +46,16 @@ export default function Home() {
         setSyntaxValid(true);
 
         if (previewRef.current) {
+          // Re-apply config to ensure pure SVG text rendering
+          mermaid.initialize({
+            startOnLoad: false,
+            theme: 'default',
+            flowchart: { htmlLabels: false },
+            sequence: { useMaxWidth: false },
+            class: { htmlLabels: false },
+            journey: { useMaxWidth: false },
+            pie: { textPosition: 0.5 },
+          });
           const { svg } = await mermaid.render('mermaid-preview', code);
           previewRef.current.innerHTML = svg;
         }
@@ -103,37 +119,150 @@ export default function Home() {
     reader.readAsText(uploadedFile);
   };
 
-  const generateMermaidInkUrl = (mermaidCode: string) => {
-    // 1. Clean code: remove markdown fences and trim
-    const cleanCode = mermaidCode.replace(/```mermaid\s?|```/g, '').trim();
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const handleDownload = async () => {
+    if (!downloadUrl) return;
 
-    if (!cleanCode) {
-      return '';
-    }
-
-    // 2. Prepare logic for Mermaid.ink
-    const state = {
-      code: cleanCode,
-      mermaid: {
-        theme: 'default',
-        useMaxWidth: false,
-        flowchart: {
-          htmlLabels: true,
-          curve: 'basis',
-          padding: 20
-        },
-        themeVariables: {
-          mainBkg: '#ffffff'
-        }
+    try {
+      // 1. Capture the Live SVG
+      const svgElement = previewRef.current?.querySelector('svg');
+      if (!svgElement) {
+        throw new Error("SVG element not found. Please ensure the diagram is rendered.");
       }
-    };
 
-    // 3. Encode
-    const jsonString = JSON.stringify(state);
-    const base64String = encodeURL(jsonString); // URL safe encoding
+      // Clone the SVG to avoid modifying the live DOM
+      const clonedSvg = svgElement.cloneNode(true) as SVGSVGElement;
 
-    return `https://mermaid.ink/pdf/${base64String}`;
+      // 2. Convert any foreignObject elements to native SVG text
+      // svg2pdf.js does NOT support foreignObject - this is the key fix
+      const convertForeignObjectToText = (svg: SVGElement) => {
+        const foreignObjects = svg.querySelectorAll('foreignObject');
+        foreignObjects.forEach(fo => {
+          // Extract text content from the foreignObject HTML
+          const textContent = fo.textContent?.trim() || '';
+          if (!textContent) {
+            fo.remove();
+            return;
+          }
+
+          // Get position from foreignObject
+          const x = parseFloat(fo.getAttribute('x') || '0');
+          const y = parseFloat(fo.getAttribute('y') || '0');
+          const width = parseFloat(fo.getAttribute('width') || '100');
+          const height = parseFloat(fo.getAttribute('height') || '20');
+
+          // Try to get computed styles from the HTML content
+          const htmlDiv = fo.querySelector('div, span, p');
+          let fontSize = '14';
+          let fontFamily = 'arial, sans-serif';
+          let fill = '#333333';
+
+          if (htmlDiv && htmlDiv instanceof HTMLElement) {
+            const computed = window.getComputedStyle(htmlDiv);
+            fontSize = computed.fontSize?.replace('px', '') || '14';
+            fontFamily = computed.fontFamily || fontFamily;
+            fill = computed.color || fill;
+          }
+
+          // Create SVG text element as replacement
+          const svgText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          svgText.setAttribute('x', String(x + width / 2));
+          svgText.setAttribute('y', String(y + height / 2 + parseFloat(fontSize) / 3));
+          svgText.setAttribute('text-anchor', 'middle');
+          svgText.setAttribute('dominant-baseline', 'middle');
+          svgText.setAttribute('fill', fill);
+          svgText.setAttribute('font-size', fontSize);
+          svgText.setAttribute('font-family', fontFamily);
+          svgText.textContent = textContent;
+
+          // Replace foreignObject with SVG text
+          fo.parentNode?.replaceChild(svgText, fo);
+        });
+      };
+
+      convertForeignObjectToText(clonedSvg);
+
+      // 3. Deep Style Inlining - Fixed for SVG elements (not HTMLElement)
+      const traverseAndStyle = (source: Element, clone: Element) => {
+        // SVG elements are Element instances, NOT HTMLElement
+        const computed = window.getComputedStyle(source);
+
+        // Critical styling properties for Mermaid/SVG
+        const properties = [
+          'fill', 'stroke', 'stroke-width', 'font-family', 'font-size',
+          'font-weight', 'opacity', 'text-anchor', 'dominant-baseline',
+          'alignment-baseline', 'text-decoration', 'stroke-dasharray'
+        ];
+
+        properties.forEach(prop => {
+          const val = computed.getPropertyValue(prop);
+          if (val && val !== 'none' && val !== 'auto' && val !== 'normal') {
+            // For SVG elements, use setAttribute for presentation attributes
+            clone.setAttribute(prop, val);
+          }
+        });
+
+        // Also explicitly copy marker attributes from source attributes
+        const markerProps = ['marker-start', 'marker-end', 'marker-mid'];
+        markerProps.forEach(prop => {
+          const attrVal = source.getAttribute(prop);
+          if (attrVal) {
+            clone.setAttribute(prop, attrVal);
+          }
+        });
+
+        // Recurse into children
+        const sourceChildren = Array.from(source.children);
+        const cloneChildren = Array.from(clone.children);
+
+        for (let i = 0; i < sourceChildren.length; i++) {
+          if (cloneChildren[i]) {
+            traverseAndStyle(sourceChildren[i], cloneChildren[i]);
+          }
+        }
+      };
+
+      traverseAndStyle(svgElement, clonedSvg);
+
+      // 4. Perfect Fit-page PDF
+      const bbox = svgElement.getBBox();
+      const padding = 40; // 20px padding on each side
+      const margin = padding / 2;
+      const width = bbox.width + padding;
+      const height = bbox.height + padding;
+
+      // Import PDF libraries
+      const { jsPDF } = await import('jspdf');
+      await import('svg2pdf.js');
+
+      const pdf = new jsPDF({
+        orientation: width > height ? 'l' : 'p',
+        unit: 'pt',
+        format: [width, height]
+      });
+
+      // 5. Render to PDF
+      await pdf.svg(clonedSvg, {
+        x: margin,
+        y: margin,
+        width: bbox.width,
+        height: bbox.height
+      });
+
+      // Determine filename
+      let fileName = 'mermaid-diagram.pdf';
+      if (file && file.name) {
+        fileName = file.name.replace(/\.(md|mmd)$/i, '') + '.pdf';
+      }
+
+      pdf.save(fileName);
+
+    } catch (e) {
+      console.error(e);
+      setError("Failed to download PDF: " + (e as Error).message);
+    }
   };
+
 
   const convert = async () => {
     setIsConverting(true);
@@ -148,14 +277,13 @@ export default function Home() {
         throw new Error("No Mermaid code to convert.");
       }
 
-      const url = generateMermaidInkUrl(code);
-
-      if (!url) {
-        throw new Error("No valid Mermaid code found.");
+      if (!syntaxValid) {
+        throw new Error("Syntax error in Mermaid code.");
       }
 
-      // Store the URL for the download button
-      setDownloadUrl(url);
+      // Set a dummy URL to trigger the UI state (button visibility)
+      // The logic is now entirely Client-Side in handleDownload
+      setDownloadUrl('local-svg-render');
 
     } catch (err) {
       console.error(err);
@@ -164,39 +292,6 @@ export default function Home() {
       setIsConverting(false);
     }
   };
-
-  const handleDownload = async () => {
-    if (!downloadUrl) return;
-
-    try {
-      // Determine filename
-      let fileName = 'mermaid-diagram.pdf';
-      if (file && file.name) {
-        fileName = file.name.replace(/\.(md|mmd)$/i, '') + '.pdf';
-      }
-
-      // Fetch the PDF as a blob to force download
-      const response = await fetch(downloadUrl);
-      if (!response.ok) {
-        throw new Error(`Mermaid.ink service returned ${response.status}: ${response.statusText}`);
-      }
-
-      const blob = await response.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(blobUrl);
-
-    } catch (e) {
-      setError("Failed to download PDF: " + (e as Error).message);
-    }
-  };
-
 
 
 
