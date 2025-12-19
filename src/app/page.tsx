@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, ChangeEvent, useEffect } from 'react';
-import * as FileSaver from 'file-saver';
+import { encodeURL } from 'js-base64';
 import { Upload, FileText, Download, Code, ArrowRight, Loader2, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
@@ -29,31 +29,26 @@ export default function Home() {
     const renderPreview = async () => {
       if (!code) {
         if (previewRef.current) {
-          previewRef.current.innerHTML = ''; // Clear preview if no code
+          previewRef.current.innerHTML = '';
         }
-        setSyntaxValid(true); // No code is not a syntax error
+        setSyntaxValid(true);
         return;
       }
 
       try {
-        await mermaid.parse(code); // Validate first
+        await mermaid.parse(code);
         setSyntaxValid(true);
 
-        // Render
         if (previewRef.current) {
           const { svg } = await mermaid.render('mermaid-preview', code);
           previewRef.current.innerHTML = svg;
         }
       } catch (e) {
         setSyntaxValid(false);
-        // console.error("Mermaid syntax error", e);
-        // Don't wipe preview immediately, allows user to fix typo seeing previous state? 
-        // Or clear it? Let's clear it or show distinct error state?
-        // Reference shows "Syntax Valid" text. We'll stick to that status.
       }
     };
 
-    const timeoutId = setTimeout(renderPreview, 300); // Debounce
+    const timeoutId = setTimeout(renderPreview, 300);
     return () => clearTimeout(timeoutId);
   }, [code]);
 
@@ -94,24 +89,50 @@ export default function Home() {
     setError(null);
     setDownloadUrl(null);
 
-    // Optional: Read file to preview it? Yes, that would be cool.
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = e.target?.result as string;
-      // Try to extract mermaid block
       const mermaidBlockRegex = /```mermaid\s*([\s\S]*?)\s*```/;
       const match = mermaidBlockRegex.exec(text);
       if (match && match[1]) {
         setCode(match[1].trim());
       } else {
-        // If no block found, maybe it's raw mmd?
-        // Only set code if it looks like mermaid? 
-        // Be careful not to overwrite user's work unexpectedly?
-        // User wants to convert FILE, but previewing file content is nice.
         setCode(text);
       }
     };
     reader.readAsText(uploadedFile);
+  };
+
+  const generateMermaidInkUrl = (mermaidCode: string) => {
+    // 1. Clean code: remove markdown fences and trim
+    const cleanCode = mermaidCode.replace(/```mermaid\s?|```/g, '').trim();
+
+    if (!cleanCode) {
+      return '';
+    }
+
+    // 2. Prepare logic for Mermaid.ink
+    const state = {
+      code: cleanCode,
+      mermaid: {
+        theme: 'default',
+        useMaxWidth: false,
+        flowchart: {
+          htmlLabels: true,
+          curve: 'basis',
+          padding: 20
+        },
+        themeVariables: {
+          mainBkg: '#ffffff'
+        }
+      }
+    };
+
+    // 3. Encode
+    const jsonString = JSON.stringify(state);
+    const base64String = encodeURL(jsonString); // URL safe encoding
+
+    return `https://mermaid.ink/pdf/${base64String}`;
   };
 
   const convert = async () => {
@@ -120,30 +141,24 @@ export default function Home() {
     setDownloadUrl(null);
 
     try {
-      const formData = new FormData();
-      if (file) {
-        formData.append('file', file);
-      } else {
-        formData.append('code', code);
+      // Small delay to simulate processing/make UI feel responsive
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      if (!code) {
+        throw new Error("No Mermaid code to convert.");
       }
 
-      const response = await fetch('/api/convert', {
-        method: 'POST',
-        body: formData,
-      });
+      const url = generateMermaidInkUrl(code);
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Conversion failed');
+      if (!url) {
+        throw new Error("No valid Mermaid code found.");
       }
 
-      const blob = await response.blob();
-      // Force content type to PDF to ensure browser recognition
-      const pdfBlob = new Blob([blob], { type: 'application/pdf' });
-      const url = window.URL.createObjectURL(pdfBlob);
+      // Store the URL for the download button
       setDownloadUrl(url);
 
     } catch (err) {
+      console.error(err);
       setError((err as Error).message);
     } finally {
       setIsConverting(false);
@@ -151,44 +166,38 @@ export default function Home() {
   };
 
   const handleDownload = async () => {
-    // Robust filename generation
-    let fileName = 'diagram.pdf';
-    if (file && file.name) {
-      fileName = file.name.replace(/\.(md|mmd)$/i, '') + '.pdf';
-    }
-
-    // Strategy 1: For Code input, use Native Form Submit (Most Robust)
-    if (!file && code) {
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = '/api/convert';
-      form.target = '_self'; // Handle download in same tab
-      form.style.display = 'none';
-
-      const input = document.createElement('input');
-      input.type = 'hidden';
-      input.name = 'code';
-      input.value = code;
-      form.appendChild(input);
-
-      document.body.appendChild(form);
-      form.submit();
-      document.body.removeChild(form);
-      return;
-    }
-
-    // Strategy 2: For File input, use FileSaver (Client-side Blob)
-    // We can't re-submit a File object via standard form without user interaction.
     if (!downloadUrl) return;
 
     try {
+      // Determine filename
+      let fileName = 'mermaid-diagram.pdf';
+      if (file && file.name) {
+        fileName = file.name.replace(/\.(md|mmd)$/i, '') + '.pdf';
+      }
+
+      // Fetch the PDF as a blob to force download
       const response = await fetch(downloadUrl);
+      if (!response.ok) {
+        throw new Error(`Mermaid.ink service returned ${response.status}: ${response.statusText}`);
+      }
+
       const blob = await response.blob();
-      FileSaver.saveAs(blob, fileName);
+      const blobUrl = window.URL.createObjectURL(blob);
+
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+
     } catch (e) {
-      console.error("Download failed", e);
+      setError("Failed to download PDF: " + (e as Error).message);
     }
   };
+
+
 
 
   return (
