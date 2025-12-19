@@ -1,36 +1,90 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Mermaid to PDF Converter
 
-## Getting Started
+A modern, high-performance web application designed to convert [Mermaid.js](https://mermaid.js.org/) diagrams into high-quality PDF files. Built with Next.js 14 and Tailwind CSS, featuring a sleek dark interface, real-time preview, and instant syntax validation.
 
-First, run the development server:
+![Project Status](https://img.shields.io/badge/status-active-success.svg)
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## 🚀 Features
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- **🌓 Premium Dark UI**: A carefully crafted "Lead" dark theme with subtle gradients for a modern, professional look.
+- **👁️ Live Preview**: Real-time client-side rendering of your Mermaid diagrams as you type.
+- **✅ Immediate Validation**: Instant visual feedback on syntax errors (Red/Green indicators).
+- **📂 Drag & Drop**: Seamlessly support for `.md` and `.mmd` files. Automatically parses Mermaid code blocks from Markdown files.
+- **🖨️ High-Fidelity PDFs**: Server-side conversion using `@mermaid-js/mermaid-cli` (Puppeteer) ensures crisp, vector-quality PDF output suitable for documents and presentations.
+- **⚡ Three-Column Layout**: Optimized workflow with dedicated columns for **Editor**, **File Drop**, and **Live Preview**.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 🛠️ Tech Stack
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Framework**: [Next.js 14](https://nextjs.org/) (App Router)
+- **Styling**: [Tailwind CSS](https://tailwindcss.com/) + [clsx](https://github.com/lukeed/clsx)
+- **Icons**: [Lucide React](https://lucide.dev/)
+- **Animations**: [Framer Motion](https://www.framer.com/motion/)
+- **Core Logic**: 
+  - Frontend: `mermaid` (client-side rendering)
+  - Backend: `@mermaid-js/mermaid-cli` (server-side PDF generation)
 
-## Learn More
+## 🏁 Getting Started
 
-To learn more about Next.js, take a look at the following resources:
+Follow these steps to set up the project locally.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Prerequisites
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- Node.js 18+ 
+- npm or yarn
 
-## Deploy on Vercel
+### Installation
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/yourusername/mermaid-to-pdf.git
+   cd mermaid-to-pdf
+   ```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
+
+3. **Run the development server**
+   ```bash
+   npm run dev
+   ```
+
+4. **Open in Browser**
+   Navigate to [http://localhost:3000](http://localhost:3000) to start converting.
+
+## 📖 Usage
+
+### Using the Editor
+1. Type or paste your Mermaid code into the **Left Column** (Editor).
+2. Watch the **Right Column** (Preview) update instantly.
+3. If the syntax is valid (Green Check ✅), scroll down to the bottom Action Panel.
+4. Click **Convert Now** to generate a PDF.
+5. Click **Download PDF** when it appears.
+
+### Converting Files
+1. Drag and drop a `.md` or `.mmd` file into the **Middle Column** (Dropzone).
+2. The app will automatically extract the Mermaid code and preview it.
+3. Click **Convert Now** in the Action Panel.
+
+## ⚡ API Reference
+
+The app exposes a single API route for conversion:
+
+### `POST /api/convert`
+
+Accepts `multipart/form-data`:
+
+- **`code`** (string): Raw Mermaid code string.
+- **`file`** (file): An uploaded `.md` or `.mmd` file.
+
+**Returns:** A PDF file stream or a JSON error message.
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE).
