@@ -13,6 +13,9 @@ const execAsync = promisify(exec);
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
+// Helper to kill type errors with internal mermaid-cli types if strict
+type MermaidOutput = `${string}.pdf` | `${string}.svg` | `${string}.png`;
+
 export async function POST(req: NextRequest) {
   const tempFiles: string[] = [];
 
@@ -48,11 +51,11 @@ export async function POST(req: NextRequest) {
 
     const id = randomUUID();
     const tempDir = os.tmpdir();
-    const inputPath = join(tempDir, `${id}.mmd`);
+    const inputContentPath = join(tempDir, `${id}.mmd`);
     const outputPath = join(tempDir, `${id}.pdf`);
     const puppeteerConfigPath = join(tempDir, `${id}-puppeteer-config.json`);
 
-    tempFiles.push(inputPath);
+    tempFiles.push(inputContentPath);
     tempFiles.push(outputPath);
     tempFiles.push(puppeteerConfigPath);
 
@@ -84,50 +87,49 @@ export async function POST(req: NextRequest) {
     };
 
     await writeFile(puppeteerConfigPath, JSON.stringify(puppeteerConfig));
-    await writeFile(inputPath, inputContent);
+    await writeFile(inputContentPath, inputContent);
 
-    // 3. Execute mermaid-cli
-
-    // Attempt to locate local bin
-    // Vercel root is usually where package.json is.
-    const localBinPath = resolve(process.cwd(), 'node_modules', '.bin', 'mmdc');
-    const localBinPathWin = resolve(process.cwd(), 'node_modules', '.bin', 'mmdc.cmd');
-
-    let mmdcCommand = '';
-
-    if (process.platform === 'win32' && existsSync(localBinPathWin)) {
-      mmdcCommand = `"${localBinPathWin}"`;
-    } else if (existsSync(localBinPath)) {
-      mmdcCommand = `"${localBinPath}"`;
-    } else {
-      // Fallback: try finding the script file directly
-      const cliScriptPath = resolve(process.cwd(), 'node_modules', '@mermaid-js', 'mermaid-cli', 'src', 'cli.js');
-      if (existsSync(cliScriptPath)) {
-        mmdcCommand = `node "${cliScriptPath}"`;
-      } else {
-        throw new Error(`Could not locate 'mmdc' binary or CLI script in node_modules.`);
-      }
-    }
-
-    const command = `${mmdcCommand} -i "${inputPath}" -o "${outputPath}" -p "${puppeteerConfigPath}" --pdfFit`;
-    console.log(`Executing: ${command}`);
+    // 3. Execute mermaid-cli using Node API (User Suggestion & Best Practice)
+    // This bypasses path handling issues by relying on Node's module resolution.
+    console.log('Invoking mermaid-cli via Node API...');
 
     try {
+      // Dynamically import to ensure it loads in the request context
+      // @ts-ignore - Check if type definition exists, otherwise ignore
+      const { run } = await import('@mermaid-js/mermaid-cli');
+
       // Pass HOME env var to point to tempDir to avoid permission issues with dotfiles
-      const env = { ...process.env, HOME: tempDir, PUPPETEER_CONFIG: puppeteerConfigPath };
-      const { stdout, stderr } = await execAsync(command, { env });
-      console.log('mmdc stdout:', stdout);
-      if (stderr) console.error('mmdc stderr:', stderr);
-    } catch (execError: any) {
-      console.error('Execution Error:', execError);
-      // Check if it's a permission denied error
-      if (execError.message.includes('EACCES') || execError.message.includes('permission denied')) {
-        throw new Error(`Permission denied executing mmdc. Please ensure the binary is executable.`);
+      // We can't easily set process.env.HOME globally safely, but mermaid-cli uses puppeteer which presumably checks env.
+      // We might need to override process.env.HOME temporarily?
+      const oldHome = process.env.HOME;
+      process.env.HOME = tempDir;
+      process.env.PUPPETEER_CONFIG = puppeteerConfigPath;
+
+      await run(
+        inputContentPath,
+        outputPath as any,
+        {
+          puppeteerConfigFile: puppeteerConfigPath,
+          pdfFit: true
+        }
+      );
+
+      // Restore env (cleanliness)
+      process.env.HOME = oldHome;
+
+      console.log('mermaid-cli run completed.');
+
+    } catch (apiError: any) {
+      console.error('Mermaid CLI API Error:', apiError);
+      if (apiError.message?.includes('EACCES') || apiError.message?.includes('permission denied')) {
+        throw new Error(`Permission denied executing mmdc. Please ensure execution environment is correct.`);
       }
-      throw new Error(`Conversion process failed: ${execError.message} \nStderr: ${execError.stderr}`);
+      throw new Error(`Conversion process failed: ${apiError.message}`);
     }
 
     if (!existsSync(outputPath)) {
+      // Sometimes run() might fail silently or output elsewhere?
+      // Check for errors.
       throw new Error("PDF file was not created by the converter.");
     }
 
