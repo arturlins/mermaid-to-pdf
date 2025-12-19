@@ -1,20 +1,61 @@
 'use client';
 
-import { useState, useRef, ChangeEvent } from 'react';
-import { Upload, FileText, Download, Code, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
+import { useState, useRef, ChangeEvent, useEffect } from 'react';
+import { Upload, FileText, Download, Code, ArrowRight, Loader2, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
+import mermaid from 'mermaid';
+
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'default',
+  securityLevel: 'loose',
+});
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'editor' | 'upload'>('editor'); // For mobile primarily, but desktop uses split
   const [code, setCode] = useState<string>('graph TD;\n    A-->B;\n    A-->C;\n    B-->D;\n    C-->D;');
   const [dragActive, setDragActive] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [isConverting, setIsConverting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [syntaxValid, setSyntaxValid] = useState(true);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const renderPreview = async () => {
+      if (!code) {
+        if (previewRef.current) {
+          previewRef.current.innerHTML = ''; // Clear preview if no code
+        }
+        setSyntaxValid(true); // No code is not a syntax error
+        return;
+      }
+
+      try {
+        await mermaid.parse(code); // Validate first
+        setSyntaxValid(true);
+
+        // Render
+        if (previewRef.current) {
+          const { svg } = await mermaid.render('mermaid-preview', code);
+          previewRef.current.innerHTML = svg;
+        }
+      } catch (e) {
+        setSyntaxValid(false);
+        // console.error("Mermaid syntax error", e);
+        // Don't wipe preview immediately, allows user to fix typo seeing previous state? 
+        // Or clear it? Let's clear it or show distinct error state?
+        // Reference shows "Syntax Valid" text. We'll stick to that status.
+      }
+    };
+
+    const timeoutId = setTimeout(renderPreview, 300); // Debounce
+    return () => clearTimeout(timeoutId);
+  }, [code]);
+
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -50,7 +91,26 @@ export default function Home() {
     }
     setFile(uploadedFile);
     setError(null);
-    setDownloadUrl(null); // Reset download on new file
+    setDownloadUrl(null);
+
+    // Optional: Read file to preview it? Yes, that would be cool.
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      // Try to extract mermaid block
+      const mermaidBlockRegex = /```mermaid\s*([\s\S]*?)\s*```/;
+      const match = mermaidBlockRegex.exec(text);
+      if (match && match[1]) {
+        setCode(match[1].trim());
+      } else {
+        // If no block found, maybe it's raw mmd?
+        // Only set code if it looks like mermaid? 
+        // Be careful not to overwrite user's work unexpectedly?
+        // User wants to convert FILE, but previewing file content is nice.
+        setCode(text);
+      }
+    };
+    reader.readAsText(uploadedFile);
   };
 
   const convert = async () => {
@@ -87,12 +147,8 @@ export default function Home() {
     }
   };
 
-  // Reset file selection to switch back to code mode implicitly if user types?
-  // User asked for "left side form to add code", "right side drag and drop". 
-  // Probably wants both visible at same time on desktop.
-
   return (
-    <main className="flex min-h-screen flex-col items-center p-4 md:p-8 gap-6 max-w-[1600px] mx-auto w-full">
+    <main className="flex min-h-screen flex-col items-center p-4 md:p-8 gap-6 max-w-[1920px] mx-auto w-full">
       {/* Header */}
       <header className="w-full flex justify-between items-center py-4 border-b border-white/10 mb-4">
         <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/60 flex items-center gap-2">
@@ -102,21 +158,28 @@ export default function Home() {
         <div className="text-sm text-muted-foreground">High Quality Conversions</div>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 w-full gap-8 flex-1 min-h-[600px]">
+      {/* Main Grid: 3 Columns */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 w-full gap-8 flex-1 min-h-[500px]">
 
-        {/* Left Side: Code Editor */}
-        <div className="flex flex-col gap-4 bg-secondary/30 rounded-2xl p-6 border border-white/5 shadow-xl backdrop-blur-sm h-full">
+        {/* Col 1: Code Editor */}
+        <div className="flex flex-col gap-4 bg-secondary/30 rounded-2xl p-6 border border-white/5 shadow-xl backdrop-blur-sm h-full min-h-[500px]">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold flex items-center gap-2">
               <FileText size={20} className="text-primary" />
               Mermaid Editor
             </h2>
-            <button
-              onClick={() => setCode('')}
-              className="text-xs text-muted-foreground hover:text-white transition-colors"
-            >
-              Clear
-            </button>
+            <div className="flex items-center gap-4">
+              <div className={clsx("flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full", syntaxValid ? "text-green-400 bg-green-400/10" : "text-red-400 bg-red-400/10")}>
+                {syntaxValid ? <CheckCircle size={12} /> : <XCircle size={12} />}
+                {syntaxValid ? "Syntax Valid" : "Syntax Error"}
+              </div>
+              <button
+                onClick={() => setCode('')}
+                className="text-xs text-muted-foreground hover:text-white transition-colors"
+              >
+                Clear
+              </button>
+            </div>
           </div>
 
           <div className="relative flex-1">
@@ -124,28 +187,32 @@ export default function Home() {
               value={code}
               onChange={(e) => {
                 setCode(e.target.value);
-                if (file) setFile(null);
-                if (downloadUrl) setDownloadUrl(null); // Reset download on change
+                if (file) setFile(null); // Clear file selection when editing code manually
+                if (downloadUrl) setDownloadUrl(null);
               }}
               className="w-full h-full min-h-[400px] bg-black/40 rounded-xl p-4 font-mono text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/50 text-gray-300 border border-white/5 scrollbar-thin"
               placeholder="graph TD; A-->B;"
               spellCheck={false}
             />
             {file && (
-              <div className="absolute inset-0 bg-black/60 backdrop-blur-[1px] rounded-xl flex items-center justify-center">
+              <div className="absolute inset-0 bg-black/60 backdrop-blur-[1px] rounded-xl flex items-center justify-center pointer-events-none">
+                {/* Allow clicking through? No, editing file usually means clearing file mode. 
+                      Display overlay message but making it clickable to dismiss? 
+                      Actually current logic clears file on change, so user can just start typing. 
+                      We'll hide this overlay if they click/focus? 
+                      Let's just show it to indicate 'File Mode' but let them type to override.
+                  */}
                 <p className="text-muted-foreground">File selected. Clear file to edit code.</p>
               </div>
             )}
           </div>
         </div>
 
-        {/* Right Side: Controls & Output */}
-        <div className="flex flex-col gap-6 h-full">
-
-          {/* Dropzone */}
+        {/* Col 2: Dropzone */}
+        <div className="flex flex-col gap-4 h-full min-h-[500px]">
           <div
             className={clsx(
-              "h-full min-h-[400px] rounded-2xl border-2 border-dashed transition-all duration-300 flex flex-col items-center justify-center p-6 gap-4 text-center cursor-pointer relative overflow-hidden group shrink-0",
+              "h-full rounded-2xl border-2 border-dashed transition-all duration-300 flex flex-col items-center justify-center p-6 gap-4 text-center cursor-pointer relative overflow-hidden group",
               dragActive ? "border-primary bg-primary/10" : "border-white/10 hover:border-white/20 hover:bg-white/5 bg-secondary/20"
             )}
             onDragEnter={handleDrag}
@@ -204,8 +271,32 @@ export default function Home() {
               )}
             </AnimatePresence>
           </div>
-
         </div>
+
+        {/* Col 3: Live Preview */}
+        <div className="flex flex-col gap-4 bg-white rounded-2xl p-6 shadow-xl h-full min-h-[500px] overflow-hidden">
+          <div className="flex items-center justify-between border-b border-gray-100 pb-4 mb-2">
+            <h2 className="text-lg font-semibold flex items-center gap-2 text-gray-800">
+              Live Preview
+            </h2>
+            <span className="text-xs text-gray-400">SVG Output</span>
+          </div>
+
+          <div className="flex-1 flex items-center justify-center overflow-auto bg-white p-2 w-full h-full relative">
+            {/* Mermaid container */}
+            <div ref={previewRef} className="w-full h-full flex items-center justify-center" />
+
+            {!syntaxValid && (
+              <div className="absolute inset-0 bg-white/80 flex items-center justify-center">
+                <div className="text-red-500 font-medium flex flex-col items-center gap-2">
+                  <AlertCircle size={32} />
+                  <span>Syntax Error</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
       </div>
 
       {/* Action / Result Panel - Moved to bottom */}
