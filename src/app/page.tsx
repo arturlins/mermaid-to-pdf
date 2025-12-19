@@ -1,65 +1,271 @@
-import Image from "next/image";
+'use client';
+
+import { useState, useRef, ChangeEvent } from 'react';
+import { Upload, FileText, Download, Code, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import clsx from 'clsx';
 
 export default function Home() {
+  const [activeTab, setActiveTab] = useState<'editor' | 'upload'>('editor'); // For mobile primarily, but desktop uses split
+  const [code, setCode] = useState<string>('graph TD;\n    A-->B;\n    A-->C;\n    B-->D;\n    C-->D;');
+  const [dragActive, setDragActive] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [isConverting, setIsConverting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleFile(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    if (e.target.files && e.target.files[0]) {
+      handleFile(e.target.files[0]);
+    }
+  };
+
+  const handleFile = (uploadedFile: File) => {
+    if (!uploadedFile.name.match(/\.(md|mmd)$/)) {
+      setError("Please upload a .md or .mmd mermaid file.");
+      return;
+    }
+    setFile(uploadedFile);
+    setError(null);
+    setDownloadUrl(null); // Reset download on new file
+  };
+
+  const convert = async () => {
+    setIsConverting(true);
+    setError(null);
+    setDownloadUrl(null);
+
+    try {
+      const formData = new FormData();
+      if (file) {
+        formData.append('file', file);
+      } else {
+        formData.append('code', code);
+      }
+
+      const response = await fetch('/api/convert', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Conversion failed');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      setDownloadUrl(url);
+
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setIsConverting(false);
+    }
+  };
+
+  // Reset file selection to switch back to code mode implicitly if user types?
+  // User asked for "left side form to add code", "right side drag and drop". 
+  // Probably wants both visible at same time on desktop.
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <main className="flex min-h-screen flex-col items-center p-4 md:p-8 gap-6 max-w-[1600px] mx-auto w-full">
+      {/* Header */}
+      <header className="w-full flex justify-between items-center py-4 border-b border-white/10 mb-4">
+        <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/60 flex items-center gap-2">
+          <span className="bg-primary/20 p-2 rounded-lg text-primary"><Code size={24} /></span>
+          Mermaid to PDF
+        </h1>
+        <div className="text-sm text-muted-foreground">High Quality Conversions</div>
+      </header>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 w-full gap-8 flex-1 min-h-[600px]">
+
+        {/* Left Side: Code Editor */}
+        <div className="flex flex-col gap-4 bg-secondary/30 rounded-2xl p-6 border border-white/5 shadow-xl backdrop-blur-sm h-full">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <FileText size={20} className="text-primary" />
+              Mermaid Editor
+            </h2>
+            <button
+              onClick={() => setCode('')}
+              className="text-xs text-muted-foreground hover:text-white transition-colors"
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+              Clear
+            </button>
+          </div>
+
+          <div className="relative flex-1">
+            <textarea
+              value={code}
+              onChange={(e) => {
+                setCode(e.target.value);
+                if (file) setFile(null);
+                if (downloadUrl) setDownloadUrl(null); // Reset download on change
+              }}
+              className="w-full h-full min-h-[400px] bg-black/40 rounded-xl p-4 font-mono text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/50 text-gray-300 border border-white/5 scrollbar-thin"
+              placeholder="graph TD; A-->B;"
+              spellCheck={false}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+            {file && (
+              <div className="absolute inset-0 bg-black/60 backdrop-blur-[1px] rounded-xl flex items-center justify-center">
+                <p className="text-muted-foreground">File selected. Clear file to edit code.</p>
+              </div>
+            )}
+          </div>
         </div>
-      </main>
-    </div>
+
+        {/* Right Side: Controls & Output */}
+        <div className="flex flex-col gap-6 h-full">
+
+          {/* Dropzone */}
+          <div
+            className={clsx(
+              "h-48 rounded-2xl border-2 border-dashed transition-all duration-300 flex flex-col items-center justify-center p-6 gap-4 text-center cursor-pointer relative overflow-hidden group shrink-0",
+              dragActive ? "border-primary bg-primary/10" : "border-white/10 hover:border-white/20 hover:bg-white/5 bg-secondary/20"
+            )}
+            onDragEnter={handleDrag}
+            onDragLeave={handleDrag}
+            onDragOver={handleDrag}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              accept=".md,.mmd"
+              onChange={handleChange}
+            />
+
+            <AnimatePresence mode='wait'>
+              {file ? (
+                <motion.div
+                  key="file-selected"
+                  initial={{ scale: 0.9, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.9, opacity: 0 }}
+                  className="flex flex-col items-center gap-2"
+                >
+                  <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center text-primary">
+                    <FileText size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-medium text-white">{file.name}</h3>
+                    <p className="text-muted-foreground text-xs">{(file.size / 1024).toFixed(2)} KB</p>
+                  </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setFile(null); setDownloadUrl(null); }}
+                    className="text-xs text-red-400 hover:text-red-300 mt-1"
+                  >
+                    Remove File
+                  </button>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="drop-zone"
+                  initial={{ y: 10, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  exit={{ y: -10, opacity: 0 }}
+                  className="flex flex-col items-center gap-3 pointer-events-none"
+                >
+                  <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                    <Upload size={20} className="text-white/60 group-hover:text-white" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium">Drop Mermaid file</h3>
+                    <p className="text-muted-foreground text-xs">or click to browse</p>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Action / Result Panel */}
+          <div className="flex-1 bg-secondary/20 rounded-2xl p-8 border border-white/5 flex flex-col items-center justify-center text-center gap-6">
+
+            <div className="space-y-2">
+              <h3 className="text-xl font-bold text-white">
+                {file ? 'Ready to Convert File' : 'Ready to Convert Code'}
+              </h3>
+              <p className="text-muted-foreground text-sm max-w-xs mx-auto">
+                {file ? `Convert "${file.name}" to PDF.` : 'Convert the Mermaid code from the editor to PDF.'}
+              </p>
+            </div>
+
+            <button
+              onClick={convert}
+              disabled={isConverting || (!code && !file)}
+              className="w-full max-w-xs bg-primary hover:bg-primary/90 text-white px-8 py-4 rounded-xl font-bold text-lg transition-all transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 shadow-xl shadow-primary/20"
+            >
+              {isConverting ? (
+                <>
+                  <Loader2 className="animate-spin" size={24} /> Converting...
+                </>
+              ) : (
+                <>
+                  Convert Now <ArrowRight size={24} />
+                </>
+              )}
+            </button>
+
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200 text-sm flex items-center gap-2 max-w-sm"
+              >
+                <AlertCircle size={16} className="shrink-0" /> {error}
+              </motion.div>
+            )}
+
+            <AnimatePresence>
+              {downloadUrl && !isConverting && (
+                <motion.div
+                  initial={{ scale: 0.9, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  className="w-full max-w-xs"
+                >
+                  <a
+                    href={downloadUrl}
+                    download={file ? file.name.replace(/\.(md|mmd)$/, '.pdf') : 'mermaid-diagram.pdf'}
+                    className="w-full bg-green-500 hover:bg-green-600 text-white px-8 py-4 rounded-xl font-bold text-lg transition-colors flex items-center justify-center gap-3 shadow-lg shadow-green-500/20"
+                  >
+                    <Download size={24} /> Download PDF
+                  </a>
+                  <p className="mt-4 text-xs text-muted-foreground">Conversion successful!</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+          </div>
+        </div>
+
+      </div>
+    </main>
   );
 }
