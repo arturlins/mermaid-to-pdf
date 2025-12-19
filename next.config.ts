@@ -8,6 +8,7 @@ const nextConfig: NextConfig = {
       './node_modules/commander/**/*',
       './node_modules/puppeteer/**/*',
       './node_modules/chalk/**/*',
+      './node_modules/import-meta-resolve/**/*',
     ],
   },
 };
