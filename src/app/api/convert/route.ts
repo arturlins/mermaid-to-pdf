@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { writeFile, readFile, unlink, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import os from 'os';
@@ -64,9 +64,11 @@ export async function POST(req: NextRequest) {
       executablePath = localPaths.find(path => existsSync(path)) || '';
     }
 
+    // Fix Build Error: 'headless' property might not exist on chromium object in newer versions
+    // Using simple boolean 'true' which is standard for puppeteer config
     const puppeteerConfig = {
       executablePath: executablePath,
-      headless: chromium.headless,
+      headless: true,
       args: [
         ...chromium.args,
         '--no-sandbox',
@@ -79,15 +81,44 @@ export async function POST(req: NextRequest) {
     await writeFile(puppeteerConfigPath, JSON.stringify(puppeteerConfig));
     await writeFile(inputPath, inputContent);
 
-    const command = `npx -y @mermaid-js/mermaid-cli -i "${inputPath}" -o "${outputPath}" -p "${puppeteerConfigPath}" --pdfFit`;
+    // 3. Execute mermaid-cli
+
+    // Attempt to locate local bin
+    // Vercel root is usually where package.json is.
+    const localBinPath = resolve(process.cwd(), 'node_modules', '.bin', 'mmdc');
+    const localBinPathWin = resolve(process.cwd(), 'node_modules', '.bin', 'mmdc.cmd');
+
+    let mmdcCommand = '';
+
+    if (process.platform === 'win32' && existsSync(localBinPathWin)) {
+      mmdcCommand = `"${localBinPathWin}"`;
+    } else if (existsSync(localBinPath)) {
+      mmdcCommand = `"${localBinPath}"`;
+    } else {
+      // Fallback: try finding the script file directly
+      const cliScriptPath = resolve(process.cwd(), 'node_modules', '@mermaid-js', 'mermaid-cli', 'src', 'cli.js');
+      if (existsSync(cliScriptPath)) {
+        mmdcCommand = `node "${cliScriptPath}"`;
+      } else {
+        throw new Error(`Could not locate 'mmdc' binary or CLI script in node_modules.`);
+      }
+    }
+
+    const command = `${mmdcCommand} -i "${inputPath}" -o "${outputPath}" -p "${puppeteerConfigPath}" --pdfFit`;
     console.log(`Executing: ${command}`);
 
     try {
-      const { stdout, stderr } = await execAsync(command);
+      // Pass HOME env var to point to tempDir to avoid permission issues with dotfiles
+      const env = { ...process.env, HOME: tempDir, PUPPETEER_CONFIG: puppeteerConfigPath };
+      const { stdout, stderr } = await execAsync(command, { env });
       console.log('stdout:', stdout);
       if (stderr) console.error('stderr:', stderr);
     } catch (execError: any) {
       console.error('Execution Error:', execError);
+      // Check if it's a permission denied error
+      if (execError.message.includes('EACCES') || execError.message.includes('permission denied')) {
+        throw new Error(`Permission denied executing mmdc. Please ensure the binary is executable.`);
+      }
       throw new Error(`Conversion process failed: ${execError.message} \nStderr: ${execError.stderr}`);
     }
 
