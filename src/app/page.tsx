@@ -122,132 +122,33 @@ export default function Home() {
   /* eslint-disable @typescript-eslint/no-explicit-any */
   const handleDownload = async () => {
     if (!downloadUrl) return;
+    if (!code) return;
 
     try {
-      // 1. Capture the Live SVG
-      const svgElement = previewRef.current?.querySelector('svg');
-      if (!svgElement) {
-        throw new Error("SVG element not found. Please ensure the diagram is rendered.");
+      setIsConverting(true);
+      setError(null);
+
+      // Call the server-side PDF generation API
+      const response = await fetch('/api/generate-pdf', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ code }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to generate PDF');
       }
 
-      // Clone the SVG to avoid modifying the live DOM
-      const clonedSvg = svgElement.cloneNode(true) as SVGSVGElement;
+      // Get the PDF blob
+      const pdfBlob = await response.blob();
 
-      // 2. Convert any foreignObject elements to native SVG text
-      // svg2pdf.js does NOT support foreignObject - this is the key fix
-      const convertForeignObjectToText = (svg: SVGElement) => {
-        const foreignObjects = svg.querySelectorAll('foreignObject');
-        foreignObjects.forEach(fo => {
-          // Extract text content from the foreignObject HTML
-          const textContent = fo.textContent?.trim() || '';
-          if (!textContent) {
-            fo.remove();
-            return;
-          }
-
-          // Get position from foreignObject
-          const x = parseFloat(fo.getAttribute('x') || '0');
-          const y = parseFloat(fo.getAttribute('y') || '0');
-          const width = parseFloat(fo.getAttribute('width') || '100');
-          const height = parseFloat(fo.getAttribute('height') || '20');
-
-          // Try to get computed styles from the HTML content
-          const htmlDiv = fo.querySelector('div, span, p');
-          let fontSize = '14';
-          let fontFamily = 'arial, sans-serif';
-          let fill = '#333333';
-
-          if (htmlDiv && htmlDiv instanceof HTMLElement) {
-            const computed = window.getComputedStyle(htmlDiv);
-            fontSize = computed.fontSize?.replace('px', '') || '14';
-            fontFamily = computed.fontFamily || fontFamily;
-            fill = computed.color || fill;
-          }
-
-          // Create SVG text element as replacement
-          const svgText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-          svgText.setAttribute('x', String(x + width / 2));
-          svgText.setAttribute('y', String(y + height / 2 + parseFloat(fontSize) / 3));
-          svgText.setAttribute('text-anchor', 'middle');
-          svgText.setAttribute('dominant-baseline', 'middle');
-          svgText.setAttribute('fill', fill);
-          svgText.setAttribute('font-size', fontSize);
-          svgText.setAttribute('font-family', fontFamily);
-          svgText.textContent = textContent;
-
-          // Replace foreignObject with SVG text
-          fo.parentNode?.replaceChild(svgText, fo);
-        });
-      };
-
-      convertForeignObjectToText(clonedSvg);
-
-      // 3. Deep Style Inlining - Fixed for SVG elements (not HTMLElement)
-      const traverseAndStyle = (source: Element, clone: Element) => {
-        // SVG elements are Element instances, NOT HTMLElement
-        const computed = window.getComputedStyle(source);
-
-        // Critical styling properties for Mermaid/SVG
-        const properties = [
-          'fill', 'stroke', 'stroke-width', 'font-family', 'font-size',
-          'font-weight', 'opacity', 'text-anchor', 'dominant-baseline',
-          'alignment-baseline', 'text-decoration', 'stroke-dasharray'
-        ];
-
-        properties.forEach(prop => {
-          const val = computed.getPropertyValue(prop);
-          if (val && val !== 'none' && val !== 'auto' && val !== 'normal') {
-            // For SVG elements, use setAttribute for presentation attributes
-            clone.setAttribute(prop, val);
-          }
-        });
-
-        // Also explicitly copy marker attributes from source attributes
-        const markerProps = ['marker-start', 'marker-end', 'marker-mid'];
-        markerProps.forEach(prop => {
-          const attrVal = source.getAttribute(prop);
-          if (attrVal) {
-            clone.setAttribute(prop, attrVal);
-          }
-        });
-
-        // Recurse into children
-        const sourceChildren = Array.from(source.children);
-        const cloneChildren = Array.from(clone.children);
-
-        for (let i = 0; i < sourceChildren.length; i++) {
-          if (cloneChildren[i]) {
-            traverseAndStyle(sourceChildren[i], cloneChildren[i]);
-          }
-        }
-      };
-
-      traverseAndStyle(svgElement, clonedSvg);
-
-      // 4. Perfect Fit-page PDF
-      const bbox = svgElement.getBBox();
-      const padding = 40; // 20px padding on each side
-      const margin = padding / 2;
-      const width = bbox.width + padding;
-      const height = bbox.height + padding;
-
-      // Import PDF libraries
-      const { jsPDF } = await import('jspdf');
-      await import('svg2pdf.js');
-
-      const pdf = new jsPDF({
-        orientation: width > height ? 'l' : 'p',
-        unit: 'pt',
-        format: [width, height]
-      });
-
-      // 5. Render to PDF
-      await pdf.svg(clonedSvg, {
-        x: margin,
-        y: margin,
-        width: bbox.width,
-        height: bbox.height
-      });
+      // Create download link
+      const url = window.URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = url;
 
       // Determine filename
       let fileName = 'mermaid-diagram.pdf';
@@ -255,11 +156,19 @@ export default function Home() {
         fileName = file.name.replace(/\.(md|mmd)$/i, '') + '.pdf';
       }
 
-      pdf.save(fileName);
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+
+      // Cleanup
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
 
     } catch (e) {
       console.error(e);
       setError("Failed to download PDF: " + (e as Error).message);
+    } finally {
+      setIsConverting(false);
     }
   };
 
@@ -282,7 +191,6 @@ export default function Home() {
       }
 
       // Set a dummy URL to trigger the UI state (button visibility)
-      // The logic is now entirely Client-Side in handleDownload
       setDownloadUrl('local-svg-render');
 
     } catch (err) {
@@ -292,7 +200,6 @@ export default function Home() {
       setIsConverting(false);
     }
   };
-
 
 
   return (
