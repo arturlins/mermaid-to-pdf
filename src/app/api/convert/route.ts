@@ -89,42 +89,53 @@ export async function POST(req: NextRequest) {
     await writeFile(puppeteerConfigPath, JSON.stringify(puppeteerConfig));
     await writeFile(inputContentPath, inputContent);
 
-    // 3. Execute mermaid-cli using Node API (User Suggestion & Best Practice)
-    // This bypasses path handling issues by relying on Node's module resolution.
-    console.log('Invoking mermaid-cli via Node API...');
+    // 3. Execute mermaid-cli via CLI Script (User Requirement)
+    // We use the CLI script directly because the Node 'run' API does not expose 'pdfFit' in its options,
+    // and the user explicitly requires the '--pdfFit' argument behavior.
+    console.log('Invoking mermaid-cli via CLI script...');
+
+    const cliScriptPath = resolve(process.cwd(), 'node_modules', '@mermaid-js', 'mermaid-cli', 'src', 'cli.js');
+
+    if (!existsSync(cliScriptPath)) {
+      throw new Error(`Could not locate mermaid-cli script at: ${cliScriptPath}`);
+    }
 
     try {
-      // Dynamically import to ensure it loads in the request context
-      // @ts-ignore - Check if type definition exists, otherwise ignore
-      const { run } = await import('@mermaid-js/mermaid-cli');
+      // Use execFile to run 'node cli.js ...args'
+      // This avoids shell injection and effectively runs the command as requested.
+      const childProcess = await import('child_process');
+      const { execFile } = childProcess;
+      const execFileAsync = promisify(execFile);
 
-      // Pass HOME env var to point to tempDir to avoid permission issues with dotfiles
-      // We can't easily set process.env.HOME globally safely, but mermaid-cli uses puppeteer which presumably checks env.
-      // We might need to override process.env.HOME temporarily?
-      const oldHome = process.env.HOME;
-      process.env.HOME = tempDir;
-      process.env.PUPPETEER_CONFIG = puppeteerConfigPath;
+      const args = [
+        cliScriptPath,
+        '-i', inputContentPath,
+        '-o', outputPath as string, // Explicit cast to string for CLI args
+        '-p', puppeteerConfigPath,
+        '--pdfFit'
+      ];
 
-      await run(
-        inputContentPath,
-        outputPath as any,
-        {
-          puppeteerConfigFile: puppeteerConfigPath,
-          pdfFit: true
-        }
-      );
+      console.log(`Spawning: ${process.execPath} ${args.join(' ')}`);
 
-      // Restore env (cleanliness)
-      process.env.HOME = oldHome;
+      // Pass HOME env var to point to tempDir.
+      // We do strictly what is needed for the environment.
+      const env = {
+        ...process.env,
+        HOME: tempDir,
+        PUPPETEER_CONFIG: puppeteerConfigPath
+      };
 
-      console.log('mermaid-cli run completed.');
+      const { stdout, stderr } = await execFileAsync(process.execPath, args, { env });
 
-    } catch (apiError: any) {
-      console.error('Mermaid CLI API Error:', apiError);
-      if (apiError.message?.includes('EACCES') || apiError.message?.includes('permission denied')) {
-        throw new Error(`Permission denied executing mmdc. Please ensure execution environment is correct.`);
+      console.log('CLI stdout:', stdout);
+      if (stderr) console.error('CLI stderr:', stderr);
+
+    } catch (cliError: any) {
+      console.error('Mermaid CLI Execution Error:', cliError);
+      if (cliError.message?.includes('EACCES') || cliError.message?.includes('permission denied')) {
+        throw new Error(`Permission denied executing CLI. Ensure permissions are correct.`);
       }
-      throw new Error(`Conversion process failed: ${apiError.message}`);
+      throw new Error(`Conversion process failed: ${cliError.message}\nStderr: ${cliError.stderr || ''}`);
     }
 
     if (!existsSync(outputPath)) {
