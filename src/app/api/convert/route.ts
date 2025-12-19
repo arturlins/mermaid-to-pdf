@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFile, readFile, unlink } from 'fs/promises';
+import { writeFile, readFile, unlink, mkdir } from 'fs/promises';
+import { existsSync } from 'fs';
 import { join } from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import os from 'os';
 import { randomUUID } from 'crypto';
+import chromium from '@sparticuz/chromium';
 
 const execAsync = promisify(exec);
+
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   const tempFiles: string[] = [];
@@ -16,65 +21,84 @@ export async function POST(req: NextRequest) {
     const file = formData.get('file') as File | null;
     const code = formData.get('code') as string | null;
 
-    if (!file && !code) {
-      return NextResponse.json(
-        { error: 'No mermaid code or file provided' },
-        { status: 400 }
-      );
-    }
-
     let inputContent = '';
-    let originalName = 'diagram';
+    let originalName = 'mermaid-diagram';
 
     if (file) {
       inputContent = await file.text();
       originalName = file.name.replace(/\.(mmd|md)$/i, '');
+
+      const mermaidBlockRegex = /```mermaid\s*([\s\S]*?)\s*```/;
+      const match = mermaidBlockRegex.exec(inputContent);
+      if (match && match[1]) {
+        inputContent = match[1].trim();
+      }
     } else if (code) {
       inputContent = code;
     }
 
-    // Extract mermaid code if it's wrapped in markdown code blocks
-    const mermaidBlockRegex = /```mermaid\s*([\s\S]*?)\s*```/;
-    const match = mermaidBlockRegex.exec(inputContent);
-    if (match && match[1]) {
-      console.log("Extracted mermaid code from markdown block");
-      inputContent = match[1].trim();
+    if (!inputContent) {
+      return NextResponse.json({ error: 'No Mermaid code provided' }, { status: 400 });
     }
 
     const id = randomUUID();
     const tempDir = os.tmpdir();
     const inputPath = join(tempDir, `${id}.mmd`);
     const outputPath = join(tempDir, `${id}.pdf`);
+    const puppeteerConfigPath = join(tempDir, `${id}-puppeteer-config.json`);
 
     tempFiles.push(inputPath);
-    // outputPath is created by mmdc, but we should track it for cleanup
     tempFiles.push(outputPath);
+    tempFiles.push(puppeteerConfigPath);
 
+    let executablePath = '';
+
+    if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
+      executablePath = await chromium.executablePath();
+    } else {
+      const localPaths = [
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+      ];
+      executablePath = localPaths.find(path => existsSync(path)) || '';
+    }
+
+    const puppeteerConfig = {
+      executablePath: executablePath,
+      headless: chromium.headless,
+      args: [
+        ...chromium.args,
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--font-render-hinting=none'
+      ],
+      ignoreHTTPSErrors: true,
+    };
+
+    await writeFile(puppeteerConfigPath, JSON.stringify(puppeteerConfig));
     await writeFile(inputPath, inputContent);
 
-    // Use npx to execute mmdc. This is more robust as it handles the binary location.
-    // We explicitly call the mmdc executable from the local node_modules to ensure version control.
-    // On Windows, npx works well.
-    const command = `npx -y @mermaid-js/mermaid-cli -i "${inputPath}" -o "${outputPath}" --pdfFit`;
-
-    console.log(`Executing conversion command: ${command}`);
+    const command = `npx -y @mermaid-js/mermaid-cli -i "${inputPath}" -o "${outputPath}" -p "${puppeteerConfigPath}" --pdfFit`;
+    console.log(`Executing: ${command}`);
 
     try {
       const { stdout, stderr } = await execAsync(command);
-      console.log('MMDC Output:', stdout);
-      if (stderr) console.warn('MMDC Stderr:', stderr);
+      console.log('stdout:', stdout);
+      if (stderr) console.error('stderr:', stderr);
     } catch (execError: any) {
-      console.error("MMDC Execution Error Details:", execError);
-      console.error("MMDC Stdout:", execError.stdout);
-      console.error("MMDC Stderr:", execError.stderr);
-      throw new Error(`Failed to convert mermaid content. Exit code: ${execError.code}. Stderr: ${execError.stderr}`);
+      console.error('Execution Error:', execError);
+      throw new Error(`Conversion process failed: ${execError.message} \nStderr: ${execError.stderr}`);
+    }
+
+    if (!existsSync(outputPath)) {
+      throw new Error("PDF file was not created by the converter.");
     }
 
     const pdfBuffer = await readFile(outputPath);
 
-    // Cleanup happens in finally block
-
     return new NextResponse(pdfBuffer, {
+      status: 200,
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="${originalName}.pdf"`,
@@ -83,12 +107,8 @@ export async function POST(req: NextRequest) {
 
   } catch (error) {
     console.error('Conversion error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error during conversion' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   } finally {
-    // Cleanup temp files
     await Promise.allSettled(
       tempFiles.map((file) => unlink(file).catch(() => { }))
     );
