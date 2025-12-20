@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// Chromium binary URL for serverless environments
+// Chromium binary pack URL for serverless environments (chromium-min)
+// Must match the installed @sparticuz/chromium-min version (143.0.0)
 const CHROMIUM_BINARY_URL =
-  'https://github.com/nicholasjhenry/chromium-min-binaries/raw/main/chromium-v119.0.0.zip';
+  'https://github.com/Sparticuz/chromium/releases/download/v143.0.0/chromium-v143.0.0-pack.x64.tar';
 
 export async function POST(request: NextRequest) {
   let browser = null;
