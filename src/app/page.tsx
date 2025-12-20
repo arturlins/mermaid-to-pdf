@@ -210,7 +210,7 @@ export default function Home() {
           <span className="bg-primary/20 p-2 rounded-lg text-primary"><Code size={24} /></span>
           Mermaid to PDF
         </h1>
-        <div className="text-sm text-muted-foreground">High Quality Conversions</div>
+        <div className="text-sm text-muted-foreground">High Quality Vectorial PDF from Mermaid.js</div>
       </header>
 
       {/* Main Grid: 3 Columns */}
@@ -362,7 +362,7 @@ export default function Home() {
             {file ? 'Ready to Convert File' : 'Ready to Convert Code'}
           </h3>
           <p className="text-muted-foreground text-sm max-w-md mx-auto">
-            {file ? `Convert "${file.name}" to PDF.` : 'Convert the Mermaid code from the editor above to a high-quality PDF.'}
+            {file ? `Convert "${file.name}" to PDF.` : 'Convert the Mermaid code to PDF'}
           </p>
         </div>
 

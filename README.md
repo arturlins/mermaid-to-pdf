@@ -1,6 +1,8 @@
 # Mermaid to PDF Converter
 
-A modern, high-performance web application designed to convert [Mermaid.js](https://mermaid.js.org/) diagrams into high-quality PDF files. Built with Next.js 14 and Tailwind CSS, featuring a sleek dark interface, real-time preview, and instant syntax validation.
+A modern, high-performance web application designed to convert [Mermaid.js](https://mermaid.js.org/) diagrams into high-quality PDF files. Built with **Next.js 16**, **React 19**, and **Tailwind CSS**. 
+
+Optimized for **Serverless Environments** (like Vercel) using `puppeteer-core` and `@sparticuz/chromium-min` for fast, scalable PDF generation.
 
 ![Project Status](https://img.shields.io/badge/status-active-success.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
@@ -11,18 +13,20 @@ A modern, high-performance web application designed to convert [Mermaid.js](http
 - **👁️ Live Preview**: Real-time client-side rendering of your Mermaid diagrams as you type.
 - **✅ Immediate Validation**: Instant visual feedback on syntax errors (Red/Green indicators).
 - **📂 Drag & Drop**: Seamlessly support for `.md` and `.mmd` files. Automatically parses Mermaid code blocks from Markdown files.
-- **🖨️ High-Fidelity PDFs**: Server-side conversion using `@mermaid-js/mermaid-cli` (Puppeteer) ensures crisp, vector-quality PDF output suitable for documents and presentations.
+- **📐 Smart PDF Sizing**: Automatically detects the SVG dimensions and generates a PDF that fits the diagram perfectly (no huge whitespace or cropped diagrams).
+- **☁️ Serverless Ready**: Uses a specialized Chromium binary (`chromium-min`) optimized for AWS Lambda and Vercel, ensuring deployments work out of the box.
 - **⚡ Three-Column Layout**: Optimized workflow with dedicated columns for **Editor**, **File Drop**, and **Live Preview**.
 
 ## 🛠️ Tech Stack
 
-- **Framework**: [Next.js 14](https://nextjs.org/) (App Router)
+- **Framework**: [Next.js 16](https://nextjs.org/) (App Router)
+- **Library**: [React 19](https://react.dev/)
 - **Styling**: [Tailwind CSS](https://tailwindcss.com/) + [clsx](https://github.com/lukeed/clsx)
 - **Icons**: [Lucide React](https://lucide.dev/)
 - **Animations**: [Framer Motion](https://www.framer.com/motion/)
 - **Core Logic**: 
-  - Frontend: `mermaid` (client-side rendering)
-  - Backend: `@mermaid-js/mermaid-cli` (server-side PDF generation)
+  - **Frontend**: `mermaid` (Live Preview)
+  - **Backend**: `puppeteer-core` + `@sparticuz/chromium-min` (Serverless PDF Generation)
 
 ## 🏁 Getting Started
 
@@ -54,6 +58,8 @@ Follow these steps to set up the project locally.
 4. **Open in Browser**
    Navigate to [http://localhost:3000](http://localhost:3000) to start converting.
 
+> **Note**: In local development (`NODE_ENV=development`), the app automatically switches to the full `puppeteer` package for easier debugging. In production, it uses the optimized `puppeteer-core` + `chromium-min`.
+
 ## 📖 Usage
 
 ### Using the Editor
@@ -72,14 +78,13 @@ Follow these steps to set up the project locally.
 
 The app exposes a single API route for conversion:
 
-### `POST /api/convert`
+### `POST /api/generate-pdf`
 
-Accepts `multipart/form-data`:
+Accepts `application/json`:
 
 - **`code`** (string): Raw Mermaid code string.
-- **`file`** (file): An uploaded `.md` or `.mmd` file.
 
-**Returns:** A PDF file stream or a JSON error message.
+**Returns:** A PDF file stream (`application/pdf`) or a JSON error message.
 
 ## 🤝 Contributing
 
